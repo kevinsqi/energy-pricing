@@ -110,13 +110,14 @@ def generate_forecast(path: str = "forecast.csv") -> int:
             rows.append(
                 {
                     "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "meter_id": meter["meter_id"],
                     "location": meter["location"],
                     "usage_mw": usage_mw(meter["meter_id"], meter["location"], ts),
                 }
             )
-    rows.sort(key=lambda r: (r["timestamp"], r["location"]))
+    rows.sort(key=lambda r: (r["timestamp"], r["meter_id"]))
     with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["timestamp", "location", "usage_mw"])
+        writer = csv.DictWriter(f, fieldnames=["timestamp", "meter_id", "location", "usage_mw"])
         writer.writeheader()
         writer.writerows(rows)
     return len(rows)

@@ -20,24 +20,24 @@ METERS = [
         "meter_id": 1,
         "location": "HB_WEST",
         "start": datetime(2027, 1, 1, 0, tzinfo=UTC),
-        "end": datetime(2027, 1, 4, 5, tzinfo=UTC),
+        "end": datetime(2027, 2, 4, 5, tzinfo=UTC),
     },
     {
         "meter_id": 2,
         "location": "HB_NORTH",
-        "start": datetime(2027, 1, 1, 12, tzinfo=UTC),
-        "end": datetime(2027, 1, 4, 0, tzinfo=UTC),
+        "start": datetime(2027, 1, 3, 12, tzinfo=UTC),
+        "end": datetime(2027, 2, 8, 0, tzinfo=UTC),
     },
     {
         "meter_id": 3,
         "location": "HB_SOUTH",
-        "start": datetime(2027, 1, 1, 14, tzinfo=UTC),
-        "end": datetime(2027, 1, 5, 0, tzinfo=UTC),
+        "start": datetime(2027, 1, 5, 14, tzinfo=UTC),
+        "end": datetime(2027, 2, 10, 0, tzinfo=UTC),
     },
 ]
 
 PRICE_START = datetime(2027, 1, 1, 0, tzinfo=UTC)
-PRICE_END = datetime(2027, 1, 10, 0, tzinfo=UTC)
+PRICE_END = datetime(2027, 2, 10, 0, tzinfo=UTC)
 PRICE_LOCATIONS = ["HB_WEST", "HB_NORTH", "HB_SOUTH"]
 
 
@@ -56,8 +56,14 @@ def _hourly_range(start: datetime, end: datetime):
 
 
 def _local_hour(ts: datetime) -> int:
-    # ERCOT hubs are US Central time, UTC-6 in January (CST).
+    # ERCOT hubs are US Central time; use a fixed UTC-6 offset for simplicity.
     return (ts.hour - 6) % 24
+
+
+def _summer_factor(ts: datetime) -> float:
+    """0 in winter, ~1 at the mid-July peak of Texas cooling season."""
+    day_of_year = ts.timetuple().tm_yday
+    return math.exp(-(((day_of_year - 200) / 55.0) ** 2))
 
 
 def usage_mw(meter_id: int, location: str, ts: datetime) -> float:
@@ -75,6 +81,8 @@ def usage_mw(meter_id: int, location: str, ts: datetime) -> float:
         workday *= 0.35
 
     usage = base + (peak - base) * workday
+    # Cooling load lifts both the overnight floor and the daytime peak in summer.
+    usage *= 1 + 0.4 * _summer_factor(ts)
     # Small hour-to-hour wobble so the series isn't perfectly smooth.
     usage *= 1 + 0.06 * (_unit_noise("usage-wobble", meter_id, ts.isoformat()) - 0.5)
     return round(usage, 4)
@@ -93,11 +101,13 @@ def price_per_mwh(location: str, ts: datetime) -> float:
         morning_peak *= 0.5
         evening_peak *= 0.6
 
-    price = base + morning_peak + evening_peak
+    summer = _summer_factor(ts)
+    price = (base + morning_peak + evening_peak) * (1 + 0.5 * summer)
     price *= 1 + 0.20 * (_unit_noise("price-wobble", location, ts.isoformat()) - 0.5)
 
-    # Rare scarcity spikes during evening peak hours.
-    if 16 <= hour <= 20 and _unit_noise("price-spike", location, ts.date()) > 0.85:
+    # Scarcity spikes during evening peak hours, much more frequent in summer.
+    spike_threshold = 0.95 - 0.25 * summer
+    if 16 <= hour <= 20 and _unit_noise("price-spike", location, ts.date()) > spike_threshold:
         price *= 4.0
 
     return round(price, 2)

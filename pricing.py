@@ -39,10 +39,12 @@ def price_all_meters(forecast_csv: str) -> float:
         summed_volumes[ts] = summed_volumes.get(ts, 0.0) + float(row["usage_mw"])
 
     total_cost = 0.0
+    total_volume = 0.0
     for timestamp in summed_volumes:
         total_cost += summed_volumes[timestamp] * price(timestamp, location)
+        total_volume += summed_volumes[timestamp]
 
-    return total_cost
+    return total_cost / total_volume
 
 
 if __name__ == "__main__":

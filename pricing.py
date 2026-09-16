@@ -1,6 +1,8 @@
 import csv
 from datetime import datetime, timedelta, timezone
 
+from forecast import generate_forecast
+
 
 def parse_timestamp(raw: str) -> datetime:
     return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -25,27 +27,45 @@ def fetch_energy_market_data(
     return timeseries
 
 
-def price_all_meters(forecast_csv: str) -> float:
-    with open(forecast_csv) as f:
-        rows = list(csv.DictReader(f))
+def price_all_meters(meters_csv: str) -> list[dict]:
+    with open(meters_csv) as f:
+        meters = list(csv.DictReader(f))
 
-    # grab first location - this is flawed assumption
-    location = rows[0]["location"]
+    # pull the hourly usage forecast for every meter
+    rows = []
+    for meter in meters:
+        rows.extend(
+            generate_forecast(
+                meter_id=int(meter["meter_id"]),
+                location=meter["location"],
+                start=parse_timestamp(meter["start_date"]),
+                end=parse_timestamp(meter["end_date"]),
+            )
+        )
 
-    # sum up volumes across all meters
-    summed_volumes: dict[datetime, float] = {}
-    for row in rows:
-        ts = parse_timestamp(row["timestamp"])
-        summed_volumes[ts] = summed_volumes.get(ts, 0.0) + float(row["usage_mw"])
+    results = []
+    for meter in meters:
+        meter_id = int(meter["meter_id"])
+        location = meter["location"]
 
-    total_cost = 0.0
-    total_volume = 0.0
-    for timestamp in summed_volumes:
-        total_cost += summed_volumes[timestamp] * price(timestamp, location)
-        total_volume += summed_volumes[timestamp]
+        # sum up this meter's volumes by hour
+        summed_volumes: dict[datetime, float] = {}
+        for row in rows:
+            if row["meter_id"] != meter_id:
+                continue
+            ts = row["timestamp"]
+            summed_volumes[ts] = summed_volumes.get(ts, 0.0) + row["usage_mw"]
 
-    return total_cost / total_volume
+        total_cost = 0.0
+        total_volume = 0.0
+        for timestamp in summed_volumes:
+            total_cost += summed_volumes[timestamp] * price(timestamp, location)
+            total_volume += summed_volumes[timestamp]
+
+        results.append({"meter_id": meter_id, "price_per_mwh": total_cost / total_volume})
+
+    return results
 
 
 if __name__ == "__main__":
-    print(price_all_meters("forecast.csv"))
+    print(price_all_meters("meters.csv"))

@@ -1,11 +1,12 @@
-"""Synthetic data generation for the energy pricing coding interview.
+"""Usage forecasting for the energy pricing exercise.
 
-Produces two CSVs of hourly, hour-beginning UTC timestamps (end times exclusive):
-  - forecast.csv: hourly usage forecasts for 3 commercial meters
-  - prices.csv:   hourly settlement-point prices for 3 ERCOT hubs
+`generate_forecast` returns an hourly usage forecast for a single meter over a
+time range, using hour-beginning UTC timestamps (end time exclusive).
+
+Also generates prices.csv: hourly settlement-point prices for 3 ERCOT hubs.
 
 All values are deterministic functions of (meter_id, location, timestamp), so
-repeated runs produce identical files.
+repeated runs produce identical results.
 """
 
 import csv
@@ -14,27 +15,6 @@ import math
 from datetime import datetime, timedelta, timezone
 
 UTC = timezone.utc
-
-METERS = [
-    {
-        "meter_id": 1,
-        "location": "HB_WEST",
-        "start": datetime(2027, 1, 1, 0, tzinfo=UTC),
-        "end": datetime(2027, 2, 4, 5, tzinfo=UTC),
-    },
-    {
-        "meter_id": 2,
-        "location": "HB_NORTH",
-        "start": datetime(2027, 1, 3, 12, tzinfo=UTC),
-        "end": datetime(2027, 2, 8, 0, tzinfo=UTC),
-    },
-    {
-        "meter_id": 3,
-        "location": "HB_SOUTH",
-        "start": datetime(2027, 1, 5, 14, tzinfo=UTC),
-        "end": datetime(2027, 2, 10, 0, tzinfo=UTC),
-    },
-]
 
 PRICE_START = datetime(2027, 1, 1, 0, tzinfo=UTC)
 PRICE_END = datetime(2027, 2, 10, 0, tzinfo=UTC)
@@ -113,24 +93,20 @@ def price_per_mwh(location: str, ts: datetime) -> float:
     return round(price, 2)
 
 
-def generate_forecast(path: str = "forecast.csv") -> int:
-    rows = []
-    for meter in METERS:
-        for ts in _hourly_range(meter["start"], meter["end"]):
-            rows.append(
-                {
-                    "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "meter_id": meter["meter_id"],
-                    "location": meter["location"],
-                    "usage_mw": usage_mw(meter["meter_id"], meter["location"], ts),
-                }
-            )
-    rows.sort(key=lambda r: (r["timestamp"], r["meter_id"]))
-    with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["timestamp", "meter_id", "location", "usage_mw"])
-        writer.writeheader()
-        writer.writerows(rows)
-    return len(rows)
+def generate_forecast(
+    meter_id: int, location: str, start: datetime, end: datetime
+) -> list[dict]:
+    """Hourly usage forecast for one meter, from `start` (inclusive) to `end`
+    (exclusive)."""
+    return [
+        {
+            "timestamp": ts,
+            "meter_id": meter_id,
+            "location": location,
+            "usage_mw": usage_mw(meter_id, location, ts),
+        }
+        for ts in _hourly_range(start, end)
+    ]
 
 
 def generate_prices(path: str = "prices.csv") -> int:
@@ -152,7 +128,5 @@ def generate_prices(path: str = "prices.csv") -> int:
 
 
 if __name__ == "__main__":
-    n_forecast = generate_forecast()
     n_prices = generate_prices()
-    print(f"forecast.csv: {n_forecast} rows")
     print(f"prices.csv: {n_prices} rows")
